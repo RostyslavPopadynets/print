@@ -1,0 +1,116 @@
+private void print(ResponseBody body) {
+        try {
+            String topPrint = body.string();
+            String[] topSplit = topPrint.split("Nb;Type;Date;Time;");
+            String header = topSplit[0];
+            String oidWithValues = "Date;Time;" + topSplit[1];
+            header = header.replaceAll("LOGITEM;", "\nLOGITEM: ");
+            header = header.replaceAll(";;;;", "");
+            header = header.replaceAll(";;;", "");
+            header = header.replaceAll(";;", ";");
+            header = header.replaceAll("SECTION;LOGDATA", "");
+
+            String[] splitNameAndValues = oidWithValues.split("\n");
+
+            List<String> oidNames = new ArrayList<>();
+            List<String> values = new ArrayList<>();
+            List<String> headers = new ArrayList<>();
+
+            StringBuilder oid = new StringBuilder();
+            StringBuilder value = new StringBuilder();
+            StringBuilder head = new StringBuilder();
+
+            for (char i : header.toCharArray()) {
+                if (i != '\n')
+                    head.append(i);
+                else {
+                    headers.add(head.toString());
+                    head = new StringBuilder();
+                }
+            }
+
+            for (char i : splitNameAndValues[0].toCharArray()) {
+                if (i != ';')
+                    oid.append(i);
+                else {
+                    oidNames.add(oid.toString());
+                    oid = new StringBuilder();
+                }
+            }
+
+            for (int k = 1; k < splitNameAndValues.length; k++) {
+                int l = 0;
+                for (char i : splitNameAndValues[k].toCharArray()) {
+                    if (i != ';')
+                        value.append(i);
+                    else {
+                        if (l++ > 1)
+                            values.add(value.toString());
+                        value = new StringBuilder();
+                    }
+                }
+            }
+
+            int nameId = 0;
+            for (int i = 0; i < values.size(); i++) {
+                if (nameId < oidNames.size() - 1 && i != 0)
+                    nameId++;
+                else
+                    nameId = 0;
+                oidNames.set(nameId, oidNames.get(nameId) + " " + values.get(i));
+            }
+
+            for (int i = 0; i < oidNames.size(); i++)
+                oidNames.set(i, oidNames.get(i) + "\n");
+
+            PrinterJob job = PrinterJob.getPrinterJob();
+
+            PrintRequestAttributeSet attributes = new HashPrintRequestAttributeSet();
+            attributes.add(DialogTypeSelection.NATIVE);
+            attributes.add(OrientationRequested.LANDSCAPE);
+            attributes.add(MediaSizeName.ISO_A4);
+            attributes.add(new Copies(1));
+
+            List<List<String>> table = new ArrayList<>();
+            for (String line : oidNames) {
+                String[] splitLine = line.split(" ");
+                List<String> tableValues = new ArrayList<>(Arrays.asList(splitLine));
+                table.add(tableValues);
+            }
+
+            String htmlForPrint = getHtmlForPrint(headers,table);
+
+            Path htmlTopReport = Files.createTempFile("top-report-" + System.nanoTime(), ".html");
+            FileUtils.writeStringToFile(htmlTopReport.toFile(), htmlForPrint, StandardCharsets.UTF_8);
+            FileInputStream fis = new FileInputStream(htmlTopReport.toFile());
+
+            DocFlavor htmlStreamFlavor = new DocFlavor("text/html; charset=utf-8", "java.io.InputStream");
+
+            Doc doc = new SimpleDoc(fis, htmlStreamFlavor, null);
+
+            PrintService service = PrintServiceLookup.lookupDefaultPrintService();
+            if (service == null) {
+                runLater(() -> {
+                    FxDialogs.showSimpleInformation(
+                            langBundle.getString("common.warning"),
+                            langBundle.getString("main.printer-not-found"),
+                            ConfigurationModel.getInstance().getMainStage());
+                });
+            } else {
+                DocPrintJob docJob = service.createPrintJob();
+
+                if (job.printDialog(attributes)) {
+                    try {
+                        docJob.print(doc, attributes);
+                    } catch (PrintException e) {
+                        LOGGER.error("Error print Top file: " + e.getMessage(), e);
+                        e.printStackTrace();
+                    } finally {
+                        fis.close();
+                    }
+                }
+            };
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
