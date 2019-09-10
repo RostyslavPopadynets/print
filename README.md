@@ -1,2 +1,2 @@
 # print
-ptinting in Java
+printing in Java
