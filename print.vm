@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Top file print</title>
+</head>
+<style>
+    table, th, td {
+        border: 1px solid black;
+        border-collapse: collapse;
+        padding: 5px;
+        text-align: left;
+    }
+</style>
+<body>
+<h1 style="text-align: center">Header</h1>
+    #foreach($head in $header)
+        <b style="text-align: left;">$head</b><br>
+    #end
+<center>
+    <h1>Top Content</h1>
+    #set($count = 1)
+    #set($periods = $table.size())
+    <table style="width:100%">
+        <tr>
+            <th>Number</th>
+            <th>OID/Name</th>
+            <th colspan="$periods">Periods</th>
+        </tr>
+        #foreach($nam in $table)
+            <tr>
+                <td>$count</td>
+                #foreach($n in $nam)
+                    <td>$n</td>
+                #end
+            </tr>
+            #set($count = $count + 1)
+        #end
+    </table>
+</center>
+
+</body>
+</html>
