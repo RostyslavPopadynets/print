@@ -1,4 +1,4 @@
-private void print(ResponseBody body) {
+ private void print(ResponseBody body, String topFileId) {
         try {
             String topPrint = body.string();
             String[] topSplit = topPrint.split("Nb;Type;Date;Time;");
@@ -63,14 +63,6 @@ private void print(ResponseBody body) {
             for (int i = 0; i < oidNames.size(); i++)
                 oidNames.set(i, oidNames.get(i) + "\n");
 
-            PrinterJob job = PrinterJob.getPrinterJob();
-
-            PrintRequestAttributeSet attributes = new HashPrintRequestAttributeSet();
-            attributes.add(DialogTypeSelection.NATIVE);
-            attributes.add(OrientationRequested.LANDSCAPE);
-            attributes.add(MediaSizeName.ISO_A4);
-            attributes.add(new Copies(1));
-
             List<List<String>> table = new ArrayList<>();
             for (String line : oidNames) {
                 String[] splitLine = line.split(" ");
@@ -78,39 +70,116 @@ private void print(ResponseBody body) {
                 table.add(tableValues);
             }
 
-            String htmlForPrint = getHtmlForPrint(headers,table);
+            String htmlForPrint = getHtmlForPrint(headers, table);
 
-            Path htmlTopReport = Files.createTempFile("top-report-" + System.nanoTime(), ".html");
-            FileUtils.writeStringToFile(htmlTopReport.toFile(), htmlForPrint, StandardCharsets.UTF_8);
-            FileInputStream fis = new FileInputStream(htmlTopReport.toFile());
+            File print = generatePdf(htmlForPrint);
 
-            DocFlavor htmlStreamFlavor = new DocFlavor("text/html; charset=utf-8", "java.io.InputStream");
-
-            Doc doc = new SimpleDoc(fis, htmlStreamFlavor, null);
-
-            PrintService service = PrintServiceLookup.lookupDefaultPrintService();
-            if (service == null) {
-                runLater(() -> {
-                    FxDialogs.showSimpleInformation(
-                            langBundle.getString("common.warning"),
-                            langBundle.getString("main.printer-not-found"),
-                            ConfigurationModel.getInstance().getMainStage());
-                });
-            } else {
-                DocPrintJob docJob = service.createPrintJob();
-
-                if (job.printDialog(attributes)) {
-                    try {
-                        docJob.print(doc, attributes);
-                    } catch (PrintException e) {
-                        LOGGER.error("Error print Top file: " + e.getMessage(), e);
-                        e.printStackTrace();
-                    } finally {
-                        fis.close();
-                    }
-                }
-            };
+            FileInputStream fis = new FileInputStream(print);
+            printer(fis, topFileId);
         } catch (IOException e) {
+            LOGGER.error("Error convert Top file for print: " + e.getMessage(), e);
             e.printStackTrace();
         }
+    }
+
+    private File generatePdf(String renderedHtmlContent) {
+        Path htmlTopReport = null;
+        try {
+            String xHtml = convertToXhtml(renderedHtmlContent);
+            ITextRenderer renderer = new ITextRenderer();
+
+            String baseUrl = FileSystems
+                    .getDefault()
+                    .getPath("src",  "main","resources","templates")
+                    .toUri()
+                    .toURL()
+                    .toString();
+            renderer.setDocumentFromString(xHtml, baseUrl);
+            renderer.layout();
+
+            htmlTopReport = Files.createTempFile("print-top-file", ".pdf");
+
+            OutputStream outputStream = new FileOutputStream(htmlTopReport.toString());
+            renderer.createPDF(outputStream);
+            outputStream.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return htmlTopReport.toFile();
+    }
+
+    private static String convertToXhtml(String html) throws UnsupportedEncodingException {
+        Tidy tidy = new Tidy();
+        tidy.setInputEncoding(UTF_8);
+        tidy.setOutputEncoding(UTF_8);
+        tidy.setXHTML(true);
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(html.getBytes(UTF_8));
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        tidy.parseDOM(inputStream, outputStream);
+        return outputStream.toString(UTF_8);
+    }
+
+    private void printer(FileInputStream fis, String topFileName) {
+        PrinterJob job = PrinterJob.getPrinterJob();
+
+        PrintRequestAttributeSet attributes = new HashPrintRequestAttributeSet();
+        attributes.add(DialogTypeSelection.NATIVE);
+        attributes.add(OrientationRequested.LANDSCAPE);
+        attributes.add(MediaSizeName.ISO_A4);
+        attributes.add(new Copies(1));
+
+        Doc doc = new SimpleDoc(fis, DocFlavor.INPUT_STREAM.AUTOSENSE, null);
+
+        PrintService service = PrintServiceLookup.lookupDefaultPrintService();
+        if (service == null) {
+            runLater(() -> FxDialogs.showSimpleInformation(
+                    langBundle.getString("common.warning"),
+                    langBundle.getString("main.printer-not-found"),
+                    ConfigurationModel.getInstance().getMainStage()));
+        } else {
+            DocPrintJob docJob = service.createPrintJob();
+            try {
+                Destination defaultDest = (Destination) service.getDefaultAttributeValue(Destination.class);
+                String dest = defaultDest.getURI().toString();
+                String[] destArr = dest.split("/");
+                String newDest = dest.replaceAll(destArr[destArr.length - 1],topFileName + ".pdf");
+                attributes.add(new Destination(new URI(newDest)));
+            } catch (URISyntaxException e) {
+                e.printStackTrace();
+            }
+            if (job.printDialog(attributes)) {
+                try {
+                    docJob.print(doc, attributes);
+                } catch (PrintException e) {
+                    LOGGER.error("Error print Top file: " + e.getMessage(), e);
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        fis.close();
+                    } catch (IOException e) {
+                        LOGGER.error("Error with closing FileInputStream when print Top file: "
+                                + e.getMessage(), e);
+                        e.printStackTrace();
+                    }
+                }
+            }
+        };
+    }
+
+    private String getHtmlForPrint(List<String> header, List<List<String>> table) {
+        VelocityEngine ve = new VelocityEngine();
+        ve.setProperty(RuntimeConstants.RESOURCE_LOADER, "classpath");
+        ve.setProperty("classpath.resource.loader.class", ClasspathResourceLoader.class.getName());
+        ve.init();
+
+        VelocityContext context = new VelocityContext();
+        context.put("header", header);
+        context.put("table", table);
+
+        Template t = ve.getTemplate("templates/print.vm");
+        StringWriter writer = new StringWriter();
+        t.merge(context, writer);
+
+        return writer.toString();
     }
