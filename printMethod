@@ -1,4 +1,4 @@
- private void print(ResponseBody body, String topFileId) {
+private void print(ResponseBody body, String topFileId) {
         try {
             String topPrint = body.string();
             String[] topSplit = topPrint.split("Nb;Type;Date;Time;");
@@ -90,7 +90,7 @@
 
             String baseUrl = FileSystems
                     .getDefault()
-                    .getPath("src",  "main","resources","templates")
+                    .getPath("src", "main", "resources", "templates")
                     .toUri()
                     .toURL()
                     .toString();
@@ -143,7 +143,7 @@
                 Destination defaultDest = (Destination) service.getDefaultAttributeValue(Destination.class);
                 String dest = defaultDest.getURI().toString();
                 String[] destArr = dest.split("/");
-                String newDest = dest.replaceAll(destArr[destArr.length - 1],topFileName + ".pdf");
+                String newDest = dest.replaceAll(destArr[destArr.length - 1], topFileName + ".pdf");
                 attributes.add(new Destination(new URI(newDest)));
             } catch (URISyntaxException e) {
                 e.printStackTrace();
